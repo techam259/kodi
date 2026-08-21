@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <addons>
-  <addon id="repository.techamreplay" name="TECHAM Replay Repository" version="1.0.1" provider-name="TECHAM Studio">
+  <addon id="repository.techamreplay" name="TECHAM Replay Repository" version="1.0.2" provider-name="TECHAM Studio">
     <extension point="xbmc.addon.repository">
       <info compressed="false">https://techam259.github.io/kodi/addons.xml</info>
       <checksum>https://techam259.github.io/kodi/addons.xml.md5</checksum>
