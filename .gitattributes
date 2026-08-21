@@ -1,4 +1,5 @@
 *.xml text eol=lf
 *.md5 text eol=lf
+*.sha256 text eol=lf
 *.html text eol=lf
 *.py text eol=lf
