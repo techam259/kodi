@@ -14,14 +14,14 @@
       <platform>all</platform>
     </extension>
   </addon>
-  <addon id="plugin.video.techamreplay" name="TECHAM Replay Sync" version="0.1.5" provider-name="TECHAM Studio">
+  <addon id="plugin.video.techamreplay" name="TECHAM Replay Sync" version="0.2.0" provider-name="TECHAM Studio">
     <requires>
       <import addon="xbmc.python" version="3.0.0" />
     </requires>
     <extension point="xbmc.service" library="service.py" start="startup" />
     <extension point="xbmc.addon.metadata">
       <summary lang="it_IT">Sincronizza lo stato di visione di Kodi con TECHAM Replay.</summary>
-      <description lang="it_IT">Registra film ed episodi visti nel profilo TECHAM Replay dell'utente.</description>
+      <description lang="it_IT">Sincronizza avanzamento, punto di ripresa e completamento di film ed episodi nel profilo TECHAM Replay.</description>
       <platform>all</platform>
       <license>Proprietary</license>
       <source>https://replay.techamstudio.com</source>
