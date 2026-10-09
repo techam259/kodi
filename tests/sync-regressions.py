@@ -4,14 +4,16 @@ root=Path(sys.argv[1])
 for p in root.rglob('*.py'):ast.parse(p.read_text(encoding='utf-8'))
 profile=tempfile.TemporaryDirectory();settings={'api_url':'https://example.invalid','access_token':'fake','enabled':True,'resume_enabled':False,'completion_threshold':90,'progress_sync_interval':30}
 class Addon:
- def getAddonInfo(self,k):return {'path':str(root),'profile':profile.name,'version':'0.2.2'}[k]
+ def getAddonInfo(self,k):return {'path':str(root),'profile':profile.name,'version':'0.3.0'}[k]
  def getSettingString(self,k):return str(settings.get(k,''))
  def getSettingBool(self,k):return bool(settings.get(k,False))
  def getSettingInt(self,k):return settings.get(k,0)
  def setSettingString(self,k,v):settings[k]=v
+ def getLocalizedString(self,k):return ''
+ def openSettings(self):return None
 sys.modules['xbmcaddon']=types.SimpleNamespace(Addon=Addon)
-sys.modules['xbmc']=types.SimpleNamespace(LOGINFO=1,LOGWARNING=2,LOGDEBUG=0,log=lambda *a:None,Monitor=object)
-sys.modules['xbmcgui']=types.SimpleNamespace(Dialog=lambda:types.SimpleNamespace(notification=lambda *a,**k:None))
+sys.modules['xbmc']=types.SimpleNamespace(LOGINFO=1,LOGWARNING=2,LOGDEBUG=0,log=lambda *a:None,getInfoLabel=lambda k:'Kodi Test',Monitor=object)
+sys.modules['xbmcgui']=types.SimpleNamespace(Dialog=lambda:types.SimpleNamespace(notification=lambda *a,**k:None,ok=lambda *a,**k:None,select=lambda *a,**k:-1))
 sys.modules['xbmcvfs']=types.SimpleNamespace(translatePath=lambda x:x,mkdirs=lambda x:None)
 sys.path.insert(0,str(root/'resources/lib'))
 import api
@@ -37,5 +39,16 @@ tracker._active_video_player_id=lambda:1;tracker._payload_for_item=lambda i:(Non
 saved=[];service.sync_progress=lambda p:saved.append(p) or True
 service.json_rpc=lambda method,params: {'item':{'file':'new.mkv'}} if method=='Player.GetItem' else {'time':{'seconds':30},'totaltime':{'minutes':20}}
 tracker.poll();assert tracker.payload is None and saved and saved[0]['tmdbId']==1
-print('PASS Kodi: syntax; stale queue; completion preservation; bounded retries; concurrent flush; unrecognized next title')
+class Response:
+ status=200
+ def __enter__(self):return self
+ def __exit__(self,*args):return False
+ def read(self):return b'{"progress":null}'
+api.urllib.request.urlopen=lambda *a,**k:Response()
+ok,reason=api.test_connection();assert ok and not reason
+status=api.get_sync_status();assert status['linked'] and status['enabled'] and status['lastSuccessAt'] and 'access_token' not in status
+assert isinstance(status['pendingCount'],int)
+panel_spec=importlib.util.spec_from_file_location('replay_panel',root/'default.py');panel=importlib.util.module_from_spec(panel_spec);panel_spec.loader.exec_module(panel)
+message=panel.status_message(status);assert 'Kodi Test' in message and 'fake' not in message
+print('PASS Kodi: syntax; stale queue; completion preservation; bounded retries; concurrent flush; unrecognized next title; diagnostics; connection test; status panel')
 profile.cleanup()
