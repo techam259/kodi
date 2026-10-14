@@ -6,6 +6,7 @@ import tempfile
 import threading
 import types
 import urllib.error
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -14,7 +15,7 @@ for path in root.rglob("*.py"):
     ast.parse(path.read_text(encoding="utf-8"))
 
 manifest = (root / "addon.xml").read_text(encoding="utf-8")
-assert 'version="1.1.0"' in manifest
+assert 'version="1.4.0"' in manifest
 assert 'library="default.py"' in manifest
 assert "resources/icon.png" in manifest
 assert (root / "resources" / "icon.png").is_file()
@@ -27,6 +28,11 @@ settings = {
     "resume_enabled": False,
     "completion_threshold": 90,
     "progress_sync_interval": 30,
+    "library_sync_enabled": True,
+    "library_sync_interval": 300,
+    "notify_updates": True,
+    "notify_sync": True,
+    "notify_content": True,
 }
 notifications = []
 executed_builtins = []
@@ -37,7 +43,7 @@ class Addon:
         return {
             "path": str(root),
             "profile": profile.name,
-            "version": "1.1.0",
+            "version": "1.4.0",
         }[key]
 
     def getSettingString(self, key):
@@ -85,6 +91,7 @@ sys.modules["xbmc"] = types.SimpleNamespace(
     log=lambda *args: None,
     getInfoLabel=lambda key: "Kodi Test",
     executebuiltin=lambda command: executed_builtins.append(command),
+    executeJSONRPC=lambda query: json.dumps({"jsonrpc": "2.0", "id": 1, "result": {}}),
     Monitor=object,
 )
 sys.modules["xbmcgui"] = types.SimpleNamespace(
@@ -98,7 +105,9 @@ sys.modules["xbmcvfs"] = types.SimpleNamespace(
 sys.path.insert(0, str(root / "resources" / "lib"))
 
 import api
+import library_sync
 import playback
+import updates
 
 http_post_progress = api._post_progress
 
@@ -283,7 +292,7 @@ assert api._read_outbox() == [item(55, 25)]
 # Diagnostics never expose the token and include the release identity.
 settings["access_token"] = "diagnostic-token"
 status = api.get_sync_status()
-assert status["linked"] and status["enabled"] and status["version"] == "1.1.0"
+assert status["linked"] and status["enabled"] and status["version"] == "1.4.0"
 assert status["apiConfigured"] and isinstance(status["pendingCount"], int)
 assert "access_token" not in status
 
@@ -294,23 +303,90 @@ panel = importlib.util.module_from_spec(panel_spec)
 panel_spec.loader.exec_module(panel)
 message = panel.status_message(status)
 assert "Kodi Test" in message and "diagnostic-token" not in message
-assert "1.1.0" in panel.TITLE and "1.1.0" in message
+assert "1.4.0" in panel.TITLE and "1.4.0" in message
 
 # Every installed release is announced only once, even when the service restarts.
 notice_count = len(notifications)
 assert service.notify_release_if_needed()
 assert not service.notify_release_if_needed()
 assert len(notifications) == notice_count + 1
-assert "1.1.0" in notifications[-1][0][1]
+assert "1.4.0" in notifications[-1][0][1]
+
+# Every Kodi 21 setting contains the required control declaration.
+settings_root = ET.parse(root / "resources" / "settings.xml").getroot()
+for setting in settings_root.findall(".//setting"):
+    assert setting.find("control") is not None, setting.get("id")
+
+# Replay manages only matching Kodi library items and can undo its own changes.
+local_movies = {
+    1: {"movieid": 1, "uniqueid": {"tmdb": "10"}, "playcount": 0},
+    2: {"movieid": 2, "uniqueid": {"tmdb": "99"}, "playcount": 1},
+}
+local_episodes = {
+    5: {
+        "episodeid": 5,
+        "tvshowid": 7,
+        "season": 1,
+        "episode": 2,
+        "playcount": 0,
+    }
+}
+library_calls = []
+
+
+def library_rpc(method, params=None):
+    if method == "VideoLibrary.GetMovies":
+        return {"movies": list(local_movies.values())}
+    if method == "VideoLibrary.GetTVShows":
+        return {"tvshows": [{"tvshowid": 7, "uniqueid": {"tmdb": "20"}}]}
+    if method == "VideoLibrary.GetEpisodes":
+        return {"episodes": list(local_episodes.values())}
+    library_calls.append((method, dict(params or {})))
+    if method == "VideoLibrary.SetMovieDetails":
+        local_movies[params["movieid"]]["playcount"] = params["playcount"]
+        return "OK"
+    if method == "VideoLibrary.SetEpisodeDetails":
+        local_episodes[params["episodeid"]]["playcount"] = params["playcount"]
+        return "OK"
+    return None
+
+
+first_snapshot = {
+    "completedMovies": [{"tmdbId": 10}],
+    "watchedEpisodes": [{"tmdbId": 20, "season": 1, "episode": 2}],
+}
+first_stats = library_sync.apply_snapshot(first_snapshot, library_rpc)
+assert first_stats["changed"] == 2 and first_stats["watched"] == 2
+assert local_movies[2]["playcount"] == 1
+second_stats = library_sync.apply_snapshot(
+    {"completedMovies": [], "watchedEpisodes": []},
+    library_rpc,
+)
+assert second_stats["changed"] == 2 and second_stats["unwatched"] == 2
+assert local_movies[2]["playcount"] == 1
+
+# Content and update notices are deduplicated per device.
+content_alert = {"key": "20:200:2026-10-15", "seriesTitle": "Serie"}
+assert api.claim_content_notices([content_alert]) == [content_alert]
+assert api.claim_content_notices([content_alert]) == []
+updates.fetch_available_version = lambda: "1.5.0"
+update_notice_count = len(notifications)
+update_ok, update_result = updates.check_for_updates(notify=True)
+assert update_ok and update_result["updateAvailable"]
+assert updates.check_for_updates(notify=True)[0]
+assert len(notifications) == update_notice_count + 1
+status = api.get_sync_status()
+assert status["availableVersion"] == "1.5.0" and status["updateAvailable"]
 
 # Every Kodi startup asks enabled repositories for fresh add-on metadata.
 assert service.request_addon_updates()
 assert executed_builtins == ["UpdateAddonRepos"]
 
 print(
-    "PASS Kodi 1.1: syntax; package metadata; HTTPS guard; specials; "
+    "PASS Kodi 1.4: syntax; package metadata; Kodi 21 settings; HTTPS guard; specials; "
     "stale queue; completion preservation; bounded retries; concurrent flush; "
     "sequential playback; panel link; device health; expired token; disconnect; "
-    "diagnostics; visible version; release notice; startup update check"
+    "diagnostics; visible version; release notice; bidirectional library state; "
+    "safe unmanaged items; content dedupe; update centre; startup update check"
 )
 profile.cleanup()

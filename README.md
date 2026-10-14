@@ -10,12 +10,13 @@ Repository ufficiale Kodi per l'add-on **TECHAM Replay Sync**.
 
 Dopo la prima installazione, Kodi rileverà gli aggiornamenti da questo repository.
 
-## Pannello 1.1
+## Pannello 1.4
 
 Apri **Add-on → Add-on programmi → TECHAM Replay Sync** per:
 
-- controllare collegamento, ultima sincronizzazione e coda offline;
-- leggere subito la versione installata nel titolo e nella prima voce del pannello;
+- controllare collegamento, ultima sincronizzazione, coda offline e modifiche alla libreria;
+- leggere subito la versione installata e l'ultima disponibile;
+- avviare manualmente il controllo aggiornamenti e la sincronizzazione Replay → Kodi;
 - collegare Kodi inserendo direttamente il codice monouso;
 - disconnettere e revocare questo dispositivo;
 - verificare la connessione al profilo Replay;
@@ -23,4 +24,4 @@ Apri **Add-on → Add-on programmi → TECHAM Replay Sync** per:
 - leggere in qualsiasi momento le novità della versione;
 - aprire le impostazioni dell'add-on.
 
-La versione 1.1 segna automaticamente come visti tutti gli episodi precedenti quando ne completi uno e richiede a Kodi un controllo del repository a ogni avvio. Mantiene inoltre le protezioni della versione 1.0: notifica per release, coda offline preservata, gestione dei token revocati e supporto agli episodi speciali della stagione 0.
+La versione 1.4 aggiunge sincronizzazione bidirezionale dello stato visto, centro aggiornamenti e notifiche configurabili per aggiornamenti, sincronizzazioni e nuove uscite. Mantiene inoltre il completamento automatico degli episodi precedenti, la coda offline, la gestione dei token revocati e il supporto agli episodi speciali della stagione 0.
