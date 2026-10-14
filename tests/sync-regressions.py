@@ -14,7 +14,7 @@ for path in root.rglob("*.py"):
     ast.parse(path.read_text(encoding="utf-8"))
 
 manifest = (root / "addon.xml").read_text(encoding="utf-8")
-assert 'version="1.0.0"' in manifest
+assert 'version="1.1.0"' in manifest
 assert 'library="default.py"' in manifest
 assert "resources/icon.png" in manifest
 assert (root / "resources" / "icon.png").is_file()
@@ -29,6 +29,7 @@ settings = {
     "progress_sync_interval": 30,
 }
 notifications = []
+executed_builtins = []
 
 
 class Addon:
@@ -36,7 +37,7 @@ class Addon:
         return {
             "path": str(root),
             "profile": profile.name,
-            "version": "1.0.0",
+            "version": "1.1.0",
         }[key]
 
     def getSettingString(self, key):
@@ -83,6 +84,7 @@ sys.modules["xbmc"] = types.SimpleNamespace(
     LOGDEBUG=0,
     log=lambda *args: None,
     getInfoLabel=lambda key: "Kodi Test",
+    executebuiltin=lambda command: executed_builtins.append(command),
     Monitor=object,
 )
 sys.modules["xbmcgui"] = types.SimpleNamespace(
@@ -281,7 +283,7 @@ assert api._read_outbox() == [item(55, 25)]
 # Diagnostics never expose the token and include the release identity.
 settings["access_token"] = "diagnostic-token"
 status = api.get_sync_status()
-assert status["linked"] and status["enabled"] and status["version"] == "1.0.0"
+assert status["linked"] and status["enabled"] and status["version"] == "1.1.0"
 assert status["apiConfigured"] and isinstance(status["pendingCount"], int)
 assert "access_token" not in status
 
@@ -292,18 +294,23 @@ panel = importlib.util.module_from_spec(panel_spec)
 panel_spec.loader.exec_module(panel)
 message = panel.status_message(status)
 assert "Kodi Test" in message and "diagnostic-token" not in message
+assert "1.1.0" in panel.TITLE and "1.1.0" in message
 
 # Every installed release is announced only once, even when the service restarts.
 notice_count = len(notifications)
 assert service.notify_release_if_needed()
 assert not service.notify_release_if_needed()
 assert len(notifications) == notice_count + 1
-assert "1.0.0" in notifications[-1][0][1]
+assert "1.1.0" in notifications[-1][0][1]
+
+# Every Kodi startup asks enabled repositories for fresh add-on metadata.
+assert service.request_addon_updates()
+assert executed_builtins == ["UpdateAddonRepos"]
 
 print(
-    "PASS Kodi 1.0: syntax; package metadata; HTTPS guard; specials; "
+    "PASS Kodi 1.1: syntax; package metadata; HTTPS guard; specials; "
     "stale queue; completion preservation; bounded retries; concurrent flush; "
     "sequential playback; panel link; device health; expired token; disconnect; "
-    "diagnostics; release notice"
+    "diagnostics; visible version; release notice; startup update check"
 )
 profile.cleanup()
