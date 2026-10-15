@@ -10,7 +10,7 @@ Repository ufficiale Kodi per l'add-on **TECHAM Replay Sync**.
 
 Dopo la prima installazione, Kodi rileverà gli aggiornamenti da questo repository.
 
-## Pannello 1.4
+## Pannello 2.0
 
 Apri **Add-on → Add-on programmi → TECHAM Replay Sync** per:
 
@@ -23,5 +23,8 @@ Apri **Add-on → Add-on programmi → TECHAM Replay Sync** per:
 - inviare subito gli elementi rimasti in attesa;
 - leggere in qualsiasi momento le novità della versione;
 - aprire le impostazioni dell'add-on.
+- aprire Replay Hub con contenuti da riprendere, libreria e attività recente;
+- associare manualmente i contenuti locali che non hanno un ID TMDb;
+- consultare la cronologia delle ultime sincronizzazioni.
 
-La versione 1.4 aggiunge sincronizzazione bidirezionale dello stato visto, centro aggiornamenti e notifiche configurabili per aggiornamenti, sincronizzazioni e nuove uscite. Mantiene inoltre il completamento automatico degli episodi precedenti, la coda offline, la gestione dei token revocati e il supporto agli episodi speciali della stagione 0.
+La versione 2.0 unifica Replay e Kodi in un hub: profili distinti, comando di sincronizzazione dal sito, stato del dispositivo, associazioni TMDb manuali, diagnostica persistente e scansione paginata delle librerie grandi. Restano disponibili completamento automatico degli episodi precedenti, coda offline, token revocabili, sincronizzazione bidirezionale e speciali della stagione 0.

@@ -15,7 +15,7 @@ for path in root.rglob("*.py"):
     ast.parse(path.read_text(encoding="utf-8"))
 
 manifest = (root / "addon.xml").read_text(encoding="utf-8")
-assert 'version="1.4.0"' in manifest
+assert 'version="2.0.0"' in manifest
 assert 'library="default.py"' in manifest
 assert "resources/icon.png" in manifest
 assert (root / "resources" / "icon.png").is_file()
@@ -33,6 +33,7 @@ settings = {
     "notify_updates": True,
     "notify_sync": True,
     "notify_content": True,
+    "remote_sync_enabled": True,
 }
 notifications = []
 executed_builtins = []
@@ -43,7 +44,7 @@ class Addon:
         return {
             "path": str(root),
             "profile": profile.name,
-            "version": "1.4.0",
+            "version": "2.0.0",
         }[key]
 
     def getSettingString(self, key):
@@ -97,6 +98,7 @@ sys.modules["xbmc"] = types.SimpleNamespace(
 sys.modules["xbmcgui"] = types.SimpleNamespace(
     Dialog=Dialog,
     INPUT_ALPHANUM=0,
+    INPUT_NUMERIC=1,
 )
 sys.modules["xbmcvfs"] = types.SimpleNamespace(
     translatePath=lambda value: value,
@@ -292,7 +294,7 @@ assert api._read_outbox() == [item(55, 25)]
 # Diagnostics never expose the token and include the release identity.
 settings["access_token"] = "diagnostic-token"
 status = api.get_sync_status()
-assert status["linked"] and status["enabled"] and status["version"] == "1.4.0"
+assert status["linked"] and status["enabled"] and status["version"] == "2.0.0"
 assert status["apiConfigured"] and isinstance(status["pendingCount"], int)
 assert "access_token" not in status
 
@@ -303,14 +305,14 @@ panel = importlib.util.module_from_spec(panel_spec)
 panel_spec.loader.exec_module(panel)
 message = panel.status_message(status)
 assert "Kodi Test" in message and "diagnostic-token" not in message
-assert "1.4.0" in panel.TITLE and "1.4.0" in message
+assert "2.0.0" in panel.TITLE and "2.0.0" in message
 
 # Every installed release is announced only once, even when the service restarts.
 notice_count = len(notifications)
 assert service.notify_release_if_needed()
 assert not service.notify_release_if_needed()
 assert len(notifications) == notice_count + 1
-assert "1.4.0" in notifications[-1][0][1]
+assert "2.0.0" in notifications[-1][0][1]
 
 # Every Kodi 21 setting contains the required control declaration.
 settings_root = ET.parse(root / "resources" / "settings.xml").getroot()
@@ -365,28 +367,94 @@ second_stats = library_sync.apply_snapshot(
 assert second_stats["changed"] == 2 and second_stats["unwatched"] == 2
 assert local_movies[2]["playcount"] == 1
 
+# Manual TMDb mappings make otherwise anonymous Kodi items synchronizable.
+local_movies[3] = {"movieid": 3, "uniqueid": {}, "playcount": 0, "title": "Manuale"}
+library_sync.apply_snapshot({"completedMovies": [], "watchedEpisodes": []}, library_rpc)
+assert any(item["kodiId"] == 3 for item in library_sync.get_unmatched_items())
+library_sync.save_manual_mapping({"kind": "movie", "kodiId": 3}, 30)
+manual_stats = library_sync.apply_snapshot(
+    {"completedMovies": [{"tmdbId": 30}], "watchedEpisodes": []},
+    library_rpc,
+)
+assert manual_stats["changed"] == 1 and local_movies[3]["playcount"] == 1
+
+# Large libraries are read in bounded JSON-RPC pages.
+page_starts = []
+
+
+def paged_rpc(method, params=None):
+    if method != "VideoLibrary.GetMovies":
+        return {}
+    start = params["limits"]["start"]
+    page_starts.append(start)
+    if start == 0:
+        return {"movies": [{"movieid": 40, "uniqueid": {"tmdb": "40"}}], "limits": {"start": 0, "end": 500, "total": 501}}
+    return {"movies": [{"movieid": 41, "uniqueid": {"tmdb": "41"}}], "limits": {"start": 500, "end": 501, "total": 501}}
+
+
+assert len(library_sync._paged(paged_rpc, "VideoLibrary.GetMovies", ["uniqueid"], "movies")) == 2
+assert page_starts == [0, 500]
+
+# The local journal keeps recovery diagnostics without exposing credentials.
+library_sync.record_journal(True, {"changed": 1, "unmatched": 0})
+assert library_sync.get_sync_history()[0]["success"] is True
+
+# Replay Hub data and the device heartbeat use authenticated 2.0 endpoints.
+settings["access_token"] = "linked-token"
+api.urllib.request.urlopen = lambda request, **kwargs: Response(json.dumps({
+    "continueWatching": [{"mediaType": "movie", "tmdbId": 10}],
+    "library": [],
+    "recentActivity": [],
+}).encode("utf-8"))
+assert api.get_remote_hub()["continueWatching"][0]["tmdbId"] == 10
+
+heartbeat_payloads = []
+
+
+def heartbeat_open(request, **kwargs):
+    heartbeat_payloads.append(json.loads(request.data.decode("utf-8")))
+    return Response()
+
+
+api.urllib.request.urlopen = heartbeat_open
+assert api.update_device_status((True, {"changed": 2, "failures": 0}), "2026-10-15T10:00:00+00:00")
+assert heartbeat_payloads[-1]["addonVersion"] == "2.0.0"
+assert heartbeat_payloads[-1]["syncStatus"] == "ok"
+assert heartbeat_payloads[-1]["acknowledgeSyncRequestedAt"].startswith("2026-10-15")
+
+remote_reports = []
+service.get_device_state = lambda: {
+    "syncRequestedAt": "2026-10-15T10:00:00+00:00",
+    "syncAcknowledgedAt": None,
+}
+service.sync_library_now = lambda rpc: (True, {"changed": 3})
+service.update_device_status = lambda result=None, acknowledge="": remote_reports.append((result, acknowledge)) or True
+assert service.sync_device_state()
+assert remote_reports[-1][1] == "2026-10-15T10:00:00+00:00"
+
 # Content and update notices are deduplicated per device.
 content_alert = {"key": "20:200:2026-10-15", "seriesTitle": "Serie"}
 assert api.claim_content_notices([content_alert]) == [content_alert]
 assert api.claim_content_notices([content_alert]) == []
-updates.fetch_available_version = lambda: "1.5.0"
+updates.fetch_available_version = lambda: "2.1.0"
 update_notice_count = len(notifications)
 update_ok, update_result = updates.check_for_updates(notify=True)
 assert update_ok and update_result["updateAvailable"]
 assert updates.check_for_updates(notify=True)[0]
 assert len(notifications) == update_notice_count + 1
 status = api.get_sync_status()
-assert status["availableVersion"] == "1.5.0" and status["updateAvailable"]
+assert status["availableVersion"] == "2.1.0" and status["updateAvailable"]
 
 # Every Kodi startup asks enabled repositories for fresh add-on metadata.
 assert service.request_addon_updates()
 assert executed_builtins == ["UpdateAddonRepos"]
 
 print(
-    "PASS Kodi 1.4: syntax; package metadata; Kodi 21 settings; HTTPS guard; specials; "
+    "PASS Kodi 2.0: syntax; package metadata; Kodi 21 settings; HTTPS guard; specials; "
     "stale queue; completion preservation; bounded retries; concurrent flush; "
     "sequential playback; panel link; device health; expired token; disconnect; "
     "diagnostics; visible version; release notice; bidirectional library state; "
-    "safe unmanaged items; content dedupe; update centre; startup update check"
+    "safe unmanaged items; manual matching; paged scans; journal; Replay Hub; "
+    "remote sync; content dedupe; update centre; startup update check"
 )
 profile.cleanup()
